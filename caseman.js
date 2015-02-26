@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
-var path = require('path');
-var pkg = require( path.join(__dirname, 'package.json') );
-var fs  = require('fs');
+var path        = require('path');
+var pkg         = require( path.join(__dirname, 'package.json') );
+var fs          = require('fs');
+var caseloader  = require('./caseloader');
+var caseremover = require('./caseremover');
 
 // Parse command line options
 
@@ -13,14 +15,15 @@ program
     .command("build <infile> <outputdir>")
     .description('build records defined in case <infile> and record records built in <outputdir>')
     .action(function(infile, outputdir, options) {
-        console.log("caseloader(%s, %s)", infile, outputdir);
+        var dir = path.resolve(outputdir);
+        caseloader(infile, dir);
     });
 
 program
     .command("teardown <outputfile>")
     .description('delete records defined in the <outputfile> created by the build command.')
     .action(function(outputfile, options) {
-        console.log("caseremover(%s)", outputfile);
+        caseremover(outputfile);
     });
 
 program.on('--help', function(){
@@ -35,6 +38,12 @@ program.on('--help', function(){
       console.log('');
 });
 
+program
+    .command("")
+    .description('')
+    .action(function(outputfile, options) {
+        program.help();
+    });
 
 program.parse(process.argv);
 
