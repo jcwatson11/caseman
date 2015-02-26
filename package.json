@@ -1,0 +1,25 @@
+{
+  "name": "caseman",
+  "version": "0.0.0",
+  "description": "Easily manage test case record setups for MSSQL databases",
+  "main": "caseman.js",
+  "scripts": {
+    "test": "jasmine"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/jcwatson11/caseman.git"
+  },
+  "keywords": [
+    "test",
+    "case",
+    "manage",
+    "mssql",
+    "database"
+  ],
+  "author": "Jon Watson <jon@sherlockwatson.com> (http://fh.org/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jcwatson11/caseman/issues"
+  }
+}
