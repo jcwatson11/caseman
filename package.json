@@ -8,7 +8,7 @@
   },
   "bin": {
     "caseman": "./caseman.js"
-  }
+  },
   "repository": {
     "type": "git",
     "url": "git://github.com/jcwatson11/caseman.git"
