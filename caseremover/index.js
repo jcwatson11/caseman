@@ -70,6 +70,7 @@ module.exports = function(recordfile) {
                                 return;
                             }
                             results[0].delete().then(function() {
+                                console.log("DELETE SUCCESS");
                                 cascadeCallback(null);
                             },function(reason) {
                                 cascadeCallback(reason);
@@ -95,10 +96,28 @@ module.exports = function(recordfile) {
                                     cascadeCallback(null);
                                     return;
                                 }
-                                results[0].delete().then(function() {
+                                var deleteTasks = [];
+                                var createDeleteTask = function(recordToDelete) {
+                                    return function(delCallback) {
+                                        recordToDelete.delete().then(function() {
+                                            console.log("DELETE SUCCESS");
+                                            delCallback(null);
+                                        },function(reason) {
+                                            delCallback(reason);
+                                        });
+                                    }
+                                }
+                                var toDelete = 1;
+                                while(toDelete = results.pop()) {
+                                    deleteTasks.push(createDeleteTask(toDelete));
+                                }
+                                async.series(deleteTasks,function(err,results) {
+                                    if(err) {
+                                        console.log("CASCADE DELETE ERROR: ");
+                                        console.dir(err);
+                                        cascadeCallback(err);
+                                    }
                                     cascadeCallback(null);
-                                },function(reason) {
-                                    cascadeCallback(reason);
                                 });
                             },function(reason) {
                                 cascadeCallback(reason);
@@ -128,7 +147,6 @@ module.exports = function(recordfile) {
                         console.dir(err);
                         callback(err);
                     }
-                    console.log("DELETE SUCCESS");
                     callback(null);
                 });
             };
