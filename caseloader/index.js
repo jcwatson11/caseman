@@ -223,10 +223,8 @@ module.exports = function(casefile,outputdir) {
                             callback(strMessage);
                             return;
                         }
-                        console.log('ENTERING modelwriter');
                         round.discoverModel(record.table,record.table,{}).then(function(models) {
                             console.log(caseDef.name + ': ' + record.table + ': ' + record.table + ' model discovered');
-                            console.log('writing values');
                             var m = models[record.table].new();
                             // m.setDebug(true);
 
@@ -249,8 +247,10 @@ module.exports = function(casefile,outputdir) {
                                     callback(err);
                                     return;
                                 }
-                                console.log(caseDef.name + ': ' + record.table + ': ' + 'Acquired nextNumbers: ');
-                                console.dir(nextNumbers);
+                                if(nextNumbers.length > 0) {
+                                    console.log(caseDef.name + ': ' + record.table + ': ' + 'Acquired nextNumbers: ');
+                                    console.dir(nextNumbers);
+                                }
 
                                 // Populate nextNumbers retrieved before this point.
                                 self.populateNextNumbers(m,nextNumbers,record,caseDef);
@@ -327,7 +327,6 @@ module.exports = function(casefile,outputdir) {
                     transaction.commit().then(function() {
                         console.log('COMMITTED');
                         callback();
-                        caseCallback();
                     },function(reason) {
                         console.log("COMMIT ATTEMPT "+commitTryCount+" FAILED");
                         if(reason.code == 'EREQINPROG' && commitTryCount < 5) {
@@ -339,7 +338,6 @@ module.exports = function(casefile,outputdir) {
                         }
                         console.log('NOT COMMITTED');
                         callback(reason);
-                        caseCallback(reason);
                     });
                 };
 
@@ -350,12 +348,7 @@ module.exports = function(casefile,outputdir) {
                 }
                 tasks.push(commit);
 
-                console.log('Composing sequence.',tasks);
-                async.waterfall(tasks,function(err,result) {
-                    if(err) {
-                        console.log('ERROR: ', err);
-                        process.exit(1);
-                    }
+                var writeFile = function(callback) {
                     // write the objects to the file system and exit
                     var strContents = JSON.stringify(recordsCreated,null,4);
                     var strCaseDefSanitized = caseDef.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -364,12 +357,25 @@ module.exports = function(casefile,outputdir) {
                     fs.writeFile(strPath,strContents,function(err) {
                         if(err) {
                             console.log('Could not write file: ' + strPath);
-                            console.log('Contents: ', strContents);
-                            process.exit(1);
+                            console.log('CONTENTS: ', strContents);
+                            callback(err);
+                            return;
                         }
                         console.log('File written to:' + strPath);
-                        process.exit(0);
+                        callback();
                     });
+                };
+                tasks.push(writeFile);
+
+                console.log('Composing sequence.',tasks);
+                async.waterfall(tasks,function(err,results) {
+                    if(err) {
+                        console.log('ERROR: ');
+                        console.dir(err);
+                        caseCallback(reason);
+                    }
+                    process.exit(0);
+                    caseCallback();
                 });
 
             };
