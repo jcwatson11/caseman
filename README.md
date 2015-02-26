@@ -13,10 +13,10 @@ Easily manage test case record setups and teardowns for MSSQL databases using th
 File: case1.js
 ```javascript
     {
-        'name': "Single Disconnected Child Sponsorship RCC"
-        ,'description': "Account with single, disconnected RCC child sponsorship."
-        ,'records': [{
-            table:'Account'
+        "name": "Single Disconnected Child Sponsorship RCC"
+        ,"description": "Account with single, disconnected RCC child sponsorship."
+        ,"records": [{
+            "table":"Account"
            ,"nextNumbers": {
                 "AccountNumber": "A01_AccountMaster"
            }
