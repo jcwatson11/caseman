@@ -13,48 +13,64 @@ Easily manage test case record setups and teardowns for MSSQL databases using th
 File: case1.js
 ```javascript
     {
-        'name': "Single Disconnected Child Sponsorship RCC"
-        ,'description': "Account with single, disconnected RCC child sponsorship."
-        ,'records': [{
-            table:'Account'
-           ,row: {
-                 FirstName         : 'TESTJON'
-                ,LastName          : 'TESTWATSON'
-                ,AccountType       : 'I'
-                ,FamilyConsolidate : 0
-                ,AllowTransactions : 1
-                ,Status            : 'A'
+        "name": "Single Disconnected Child Sponsorship RCC"
+        ,"description": "Account with single, disconnected RCC child sponsorship."
+        ,"records": [{
+            "table":"Account"
+           ,"nextNumbers": {
+                "AccountNumber": "A01_AccountMaster"
+           }
+           ,"deleteCascade": {
+                "A14_AccountFirstContacts":{"AccountNumber":"AccountNumber"}
+           }
+           ,"row": {
+                 "FirstName"         : "TESTJON"
+                ,"LastName"          : "TESTWATSON"
+                ,"AccountType"       : "I"
+                ,"FamilyConsolidate" : 0
+                ,"AllowTransactions" : 1
+                ,"Status"            : "A"
            }
         }
         ,{
-            table:'Address'
-           ,row: {
-                 Type           : 'HOME'
-                ,AddressLine1   : '1234 E TEST AVE'
-                ,City           : 'TESTVILLE'
-                ,State          : 'AZ'
-                ,ZipPostal      : '81144'
-                ,Country        : 'USA'
-                ,AddressIsPOBox : 0
+            "table":"Address"
+           ,"row": {
+                 "Type"           : "HOME"
+                ,"AddressLine1"   : "1234 E TEST AVE"
+                ,"City"           : "TESTVILLE"
+                ,"State"          : "AZ"
+                ,"ZipPostal"      : "81144"
+                ,"Country"        : "USA"
+                ,"AddressIsPOBox" : 0
            }
         }
         ,{
-            table:'AccountAddress'
-           ,populateFrom: {
-               'AccountNumber': {'Account':'AccountNumber'}
-               ,'AddressId': {'Address':'AddressId'}
+            "table":"AccountAddress"
+           ,"populateFrom": {
+                "AccountNumber": {"Account":"AccountNumber"}
+               ,"AddressId": {"Address":"AddressId"}
            }
-           ,row: {
-                 Active       : 1
-                ,UseAsPrimary : 1
+           ,"row": {
+                 "Active"       : 1
+                ,"UseAsPrimary" : 1
            }
         }
     }
 ```
 
 ```sh
-$ caseman load case1.js
+$ caseman
+# displays the help text for the program
 ```
+
+```sh
+$ caseman build case1.js path/to/outputdir
+```
+
+```sh
+$ caseman teardown path/to/outputdir/outputfile.json
+```
+
 
 ### Installation
 
