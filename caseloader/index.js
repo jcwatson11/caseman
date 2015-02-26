@@ -65,8 +65,11 @@ module.exports = function(casefile,outputdir) {
          * @param def object of format {'tablename': 'fieldname'}
          * @return the value from the field requested.
          */
-        var resolveValueFromPreviouslyCreatedRecord = function(def,recordsCreated) {
+        var resolveValueFromPreviouslyCreatedRecord = function(def,recordsCreated,model) {
             for(var i in def) {
+                if(i == 'current') {
+                    return model[def[i]];
+                }
                 for(var j=0;j<recordsCreated.length;j++) {
                     if(recordsCreated[j].table == i) {
                         return recordsCreated[j].row[def[i]];
@@ -193,7 +196,7 @@ module.exports = function(casefile,outputdir) {
          */
         var populatePreviouslyEnteredValues = function(model,record,caseDef,recordsCreated) {
             for(var i in record.populateFrom) {
-                var value = self.resolveValueFromPreviouslyCreatedRecord(record.populateFrom[i],recordsCreated);
+                var value = self.resolveValueFromPreviouslyCreatedRecord(record.populateFrom[i],recordsCreated,model);
                 console.log(caseDef.name + ': ' + record.table + ': ' + 'Populating ['+record.table+'].['+i+'] with previously acquired value ('+value+').');
                 model[i] = value;
             }
