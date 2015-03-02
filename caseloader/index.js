@@ -6,38 +6,51 @@ var async       = require('async');
 var q           = require('q');
 var fs          = require('fs');
 var md5         = require('MD5');
+var util        = require('util');
 
-module.exports = function(casefile,outputdir) {
+module.exports = function(casefile,outputdir,configfile) {
 
-    var testCase = require(path.resolve(casefile));
+    // 'use strict';
+    // Validate casefile is readable
+    var casefile = path.resolve(casefile);
+    var testCase = require(casefile);
 
-    if(typeof testCase != 'object') {
-        console.log('ERROR: Could not read ' + casefile);
+    // Just in case there was a problem with getting the case definition file.
+    if(Object.keys(testCase).length == 0) {
+        console.log('ERROR: Could not parse case definition file: ' + casefile);
         return;
     }
 
-    var outDirFiles = fs.readdirSync(outputdir);
-    if(!Array.isArray(outDirFiles)) {
-        console.log('ERROR: Could not read directory ' + outputdir);
+    // Validate output dir is readable and writable
+    var outputdir = path.resolve(outputdir);
+
+    // Validate configfile is readable
+    var configfile = (configfile) ? path.resolve(configfile):path.resolve('.')+'/caseman.js';
+    var config = require(configfile);
+
+    // Just in case there was a problem with getting the case definition file.
+    if(Object.keys(config).length == 0) {
+        console.log('ERROR: Could not get configuration file: ' + configfile);
         return;
     }
 
-    var config = {
-        user: process.env.DMS_US_USER
-       ,password: process.env.DMS_US_PASS
-       ,server: process.env.DMS_US_PROTRACTOR_HOST
-       ,database: process.env.DMS_US_DBNAME
-       ,port: process.env.DMS_US_PROTRACTOR_PORT
-    };
-
+    /**
+     * The function that does the work of processing the case definition file is in a
+     * self-executing function because of the way node caches modules.
+     *
+     * @param testCase the object that defines all of the records in the test case.
+     */
     (function(testCase) {
         var transaction    = null;
         var round          = null;
-        var se             = null;
+        var modelNames     = [];
         var self           = this;
 
+        /**
+         * Function to connect to the database. Will be used in async.sequence array.
+         */
         var connect     = function(callback) {
-            var connection = new mssql.Connection(config,function(err) {
+            var connection = new mssql.Connection(config.mssql,function(err) {
                 console.log('Connection established...');
                 if(err) {
                     console.log('ERROR: ' + err.message);
@@ -49,36 +62,13 @@ module.exports = function(casefile,outputdir) {
                 transaction.begin().then(function() {
                     console.log("transaction begun");
                     round = new roundsql(mssql,transaction);
-                    se = new sehelper(round);
-                    callback(null,se);
+                    callback(null);
                 },function(reason) {
                     callback(reason);
                 });
             });
         };
         self.connect = connect;
-
-        /**
-         * Searches through the recordsCreated array for a table name / field name pair
-         * and returns its value.
-         *
-         * @param def object of format {'tablename': 'fieldname'}
-         * @return the value from the field requested.
-         */
-        var resolveValueFromPreviouslyCreatedRecord = function(def,recordsCreated,model) {
-            for(var i in def) {
-                if(i == 'current') {
-                    return model[def[i]];
-                }
-                for(var j=0;j<recordsCreated.length;j++) {
-                    if(recordsCreated[j].table == i) {
-                        return recordsCreated[j].row[def[i]];
-                    }
-                }
-            }
-            return null;
-        };
-        self.resolveValueFromPreviouslyCreatedRecord = resolveValueFromPreviouslyCreatedRecord;
 
         /**
          * Validates the format of the record.populateFrom object.
@@ -103,14 +93,11 @@ module.exports = function(casefile,outputdir) {
                     return 'Error in case definition ['+caseDef.name+']: in table ['+ record.table +']: in populateFrom['+i+']: should be an object with {\'tablename\':\'fieldname\'} format.';
                 }
             }
-            if(record.nextNumbers) {
-                for(var i in record.nextNumbers) {
-                    var targetTable = record.nextNumbers[i];
+            if(record.sequences) {
+                for(var i in record.sequences) {
+                    var targetTable = record.sequences[i];
                     if(typeof targetTable != 'string') {
                         return 'Error in case definition ['+caseDef.name+']: in table ['+ record.table +']: in nextNumbers['+i+']: value should be a string table name.';
-                    }
-                    if(se.getNextNumberIdNameByTableName(targetTable) === false) {
-                        return 'Error in case definition ['+caseDef.name+']: in table ['+ record.table +']: in nextNumbers['+i+']: target table name is not nextNumber enabled. Perhaps you misspelled it?';
                     }
                 }
             }
@@ -124,8 +111,8 @@ module.exports = function(casefile,outputdir) {
          * @param record object following format:
          * {
          *     'table': 'string'
-         *     ,'nextNumbers': {
-         *         'tablename': 'fieldname'
+         *     ,'sequences': {
+         *         'fieldname': 'tablename'
          *         // where table name is the nextNumber enabled field
          *         // and field name is the local field that will receive the value.
          *     }
@@ -134,8 +121,10 @@ module.exports = function(casefile,outputdir) {
          * }
          */
         var validateRecord = function(record,caseDef) {
-            if(record.nextNumberPopulated && !record.nextNumberAssignmentField) {
-                return 'Error in case definition ['+caseDef.name+']: in table ['+ record.table +']: The record item indicates a NextNumber, but there is no nextNumberAssignmentField in the record object.';
+            if(record.sequences) {
+                if(typeof record.sequences != 'object') {
+                    return "Property must be an object: record.sequences.";
+                }
             }
             var strMessage = self.validatePopulateFrom(record,caseDef);
             if(strMessage !== true) {
@@ -146,214 +135,198 @@ module.exports = function(casefile,outputdir) {
         self.validateRecord = validateRecord;
 
         /**
-         * Writes values from row to model.
-         *
-         * @param model
-         * @param row
-         * @return void
-         */
-        var writeValuesFromCaseToModel = function(model,row) {
-            for(var i in row) {
-                model[i] = row[i];
-            }
-        };
-        self.writeValuesFromCaseToModel = writeValuesFromCaseToModel;
-
-        /**
-         * Populates the model with values from the next numbers array.
-         * Array members are objects with format:
-         *
-         * {'fieldtopopulate':'valuetopopulatethefieldwith'}
-         *
-         * @param model object model to populate
-         * @param nextNumbers array of objects fitting the format described above.
-         * @record object the record instruction context for the record we are acting on.
-         * @caseDef object the case definition context
-         * @return void
-         */
-        var populateNextNumbers = function(model,nextNumbers,record,caseDef) {
-            for(var i=0;i<nextNumbers.length;i++) {
-                var nxt = nextNumbers[i];
-                for(var j in nxt) {
-                    console.log(caseDef.name + ': ' + record.table + ': ' + 'Populating [' + j + '] with value: ' + nxt[j]);
-                    model[j] = nxt[j];
-                }
-            }
-        };
-        self.populateNextNumbers = populateNextNumbers;
-
-        /**
-         * Populates the model with values from previously entered records.
-         * Helpful for inserting records with a foreign key relationship to a record that was
-         * entered previously.
-         *
-         * See validatePopulateFrom() for instruction formatting requirements.
-         *
-         * @param model object model to populate
-         * @record object the record instruction context for the record we are acting on.
-         * @caseDef object the case definition context
-         * @return void
-         */
-        var populatePreviouslyEnteredValues = function(model,record,caseDef,recordsCreated) {
-            for(var i in record.populateFrom) {
-                var value = self.resolveValueFromPreviouslyCreatedRecord(record.populateFrom[i],recordsCreated,model);
-                console.log(caseDef.name + ': ' + record.table + ': ' + 'Populating ['+record.table+'].['+i+'] with previously acquired value ('+value+').');
-                model[i] = value;
-            }
-        };
-        self.populatePreviouslyEnteredValues = populatePreviouslyEnteredValues;
-
-        /**
          * Returns a function that will set up the test case defined in the json file.
          *
          * @caseDef a single item from the case list
          * @return function
          */
         var setupCase = function(caseDef) {
-            var modelWriters = [];
-            var recordsCreated = [];
+
             return function(caseCallback) {
-                console.log('SETUP: ', caseDef.name);
-                // console.dir(caseDef);
-                caseDef.records.forEach(function(record) {
-                    modelWriters.push(function(result,callback) {
-                        /**
-                         * Validate the record before starting.
-                         */
+
+                var models = {};
+                var records = [];
+                var declaredVariables = [];
+                var boundParameters = [];
+                var outputObjects = [];
+                var strSql = '';
+
+                function getStatementId(name,records,bReverse,startingPoint) {
+                    if(bReverse) {
+                        for(var i=startingPoint;i>=0;i--) {
+                            if(records[i].table == name) {
+                                return i;
+                            }
+                        }
+                    } else {
+                        for(var i = 0;i<records.length;i++) {
+                            if(records[i].table == name) {
+                                return i;
+                            }
+                        }
+                    }
+                    return 'NOTFOUND';
+                }
+
+                function discoverAllModels(callback) {
+                    // Discover all the models at once
+                    // The array.pop() syntax has higher performance ratings than any other kind of loop
+                    var instruction = null;
+                    var tables = [];
+                    while(instruction = caseDef.records.pop()) {
+                        tables.push(instruction.table);
+                        records.push(instruction);
+                    }
+
+                    var strSql = round.getColumnsSql(tables);
+                    var modelDefs = {};
+                    var modelCols = {};
+                    round.query(strSql).then(function(results) {
+                        for(var i=0;i<results.length;i++) {
+                            var result = results[i];
+                            var strTable = result.TABLE_NAME;
+                            var strField = result.COLUMN_NAME;
+                            if(typeof modelDefs[strTable] == 'undefined') {
+                                modelDefs[strTable] = [];
+                            }
+                            modelDefs[strTable].push(result);
+                        }
+                        for(var i in modelDefs) {
+                            modelCols[i] = round.translateColumns(modelDefs[i]);
+                        }
+                        for(var i in modelCols) {
+                            models[i] = round.generateModel(i,i,{},modelCols[i]);
+                        }
+                        callback();
+                    },function(err) {
+                        callback(err);
+                    });
+                };
+
+                function writeSql(callback) {
+                    records.reverse();
+                    for(var i=0;i<records.length;i++) {
+                        // sequence management
+                        var record = records[i];
                         var strMessage = self.validateRecord(record,caseDef);
                         if(strMessage !== true) {
                             console.log(caseDef.name + ': ' + record.table + ': ' + strMessage);
                             callback(strMessage);
                             return;
                         }
-                        round.discoverModel(record.table,record.table,{}).then(function(models) {
-                            console.log(caseDef.name + ': ' + record.table + ': ' + record.table + ' model discovered');
-                            var m = models[record.table].new();
-                            // m.setDebug(true);
-
-                            /**
-                             * We can go ahead and write static values from the record instruction
-                             * now. Dynamic values will come later after some async management.
-                             */
-                            self.writeValuesFromCaseToModel(m,record.row);
-
-                            // Preparing to collect nextNumberBusinessData through async waterfall
-                            var nextNumbers = [];
-
-                            /**
-                             * This function will be called as the last member of an async.waterfall
-                             * sequence after getting all nextNumbers (if there are any for this table)
-                             */
-                            function insertModel(err) {
-                                if(err) {
-                                    console.log(caseDef.name + ': ' + record.table + ': ' + 'Error retrieving final nextNumber.');
-                                    callback(err);
-                                    return;
-                                }
-                                if(nextNumbers.length > 0) {
-                                    console.log(caseDef.name + ': ' + record.table + ': ' + 'Acquired nextNumbers: ');
-                                    console.dir(nextNumbers);
-                                }
-
-                                // Populate nextNumbers retrieved before this point.
-                                self.populateNextNumbers(m,nextNumbers,record,caseDef);
-
-                                if(record.populateFrom) {
-                                    self.populatePreviouslyEnteredValues(m,record,caseDef,recordsCreated);
-                                }
-
-                                console.log(caseDef.name + ': ' + record.table + ': ' + 'Saving model.');
-
-                                // Now save the model and record it in the recordsCreated array.
-                                m.save().then(function(model) {
-                                    console.log(caseDef.name + ': ' + record.table + ': ' + 'Saved');
-                                    var created = {
-                                        'table': record.table
-                                        ,'row': JSON.parse(JSON.stringify(model,Object.keys(model.columns)))
-                                    };
-                                    if(record.deleteCascade) {
-                                        created.deleteCascade = record.deleteCascade;
-                                    }
-                                    recordsCreated.push(created);
-                                    callback(null,model);
-                                },function(reason) {
-                                    console.log(caseDef.name + ': ' + record.table + ': ' + 'ERROR while saving record in ['+record.table+']: ', reason);
-                                    callback(reason);
-                                });
+                        var instruction = records[i];
+                        var strTableName = records[i].table;
+                        var model = models[strTableName].new();
+                        model.hydrate(instruction.row);
+                        records[i].model = model;
+                        var scopeIdVariable = "pk" +i+ strTableName;
+                        var insertSql = model.getInsertQuery(true,i);
+                        var insertBindings = model.getInsertUpdateParams(false,i);
+                        if(instruction['sequences']) {
+                            if(!config.getSequenceSqlFunction) {
+                                callback('ERROR: Your case definition instructs one or more fields to be populated with a sequence. However your configuration file does not define getSequenceSqlFunction(identifier,varName).');
+                                return;
                             }
-
-                            /**
-                             * For getting multiple next numbers for a given table,
-                             * we must waterfall the calls to get next number and push them
-                             * into an array that we can pass to the model insertion method.
-                             * This is the only way to handle this asyncronously.
-                             */
-                            if(record.nextNumbers) {
-                                var nextNumberTasks = [function(cback) {cback(null,'foo')}];
-                                var addNextNumberTask = function(i) {
-                                    nextNumberTasks.push(function(result,cback) {
-                                        console.log(caseDef.name + ': ' + record.table + ': ' + 'Model is nextNumber populated in field ['+i+']. Getting nextNumber for table ['+record.nextNumbers[i]+']');
-                                        se.getNextUniqueId(record.nextNumbers[i]).then(
-                                         function(nextNumber) {
-                                             console.log(caseDef.name + ': ' + record.table + ': ' + ' Acquired nextNumber: ' + nextNumber);
-                                             var savedNextNumber = {};
-                                             savedNextNumber[i] = nextNumber;
-                                             nextNumbers.push(savedNextNumber);
-                                             cback(null,nextNumber);
-                                         }
-                                        ,function(reason) {
-                                            console.log(caseDef.name + ': ' + record.table + ': ' + 'ERROR: ', reason);
-                                            cback(reason);
-                                        })
-                                    });
-                                };
-                                for(var index in record.nextNumbers) {
-                                    addNextNumberTask(index);
+                            for(var n in instruction.sequences) {
+                                delete insertBindings[i+n];
+                                var sequenceIdentifier = instruction.sequences[n];
+                                var variableName = 'seq'+n;
+                                if(declaredVariables.indexOf(variableName) == -1) {
+                                    declaredVariables.push(variableName);
+                                    strSql += "\nDECLARE @"+variableName+" bigint;\n"
                                 }
-                                async.waterfall(nextNumberTasks,insertModel);
-                            } else {
-                                insertModel(null);
+                                var fn = config.getSequenceSqlFunction(sequenceIdentifier,variableName);
+                                strSql += fn();
                             }
-                        },function(reason) {
-                            console.log(caseDef.name + ': ' + record.table + ': ' + 'ERROR: model not discovered.');
-                            console.dir(reason);
-                            callback(reason);
-                        });
-                    });
-                });
-
-                var commitTryCount = 0;
-                var commit = function(result,callback) {
-                    commitTryCount++;
-                    console.log('Calling commit callback.');
-
-                    transaction.commit().then(function() {
-                        console.log('COMMITTED');
-                        callback();
-                    },function(reason) {
-                        console.log("COMMIT ATTEMPT "+commitTryCount+" FAILED");
-                        if(reason.code == 'EREQINPROG' && commitTryCount < 5) {
-                            console.log("Trying commit again...");
-                            setTimeout(function() {
-                                commit(result,callback);
-                            },1000);
-                            return;
                         }
-                        console.log('NOT COMMITTED');
-                        callback(reason);
-                    });
+                        strSql += "\nDECLARE @"+scopeIdVariable+" bigint;\n"
+                        declaredVariables.push(scopeIdVariable);
+                        if(instruction.populateFrom) {
+                            for(var f in instruction.populateFrom) {
+                                for(var t in instruction.populateFrom[f]) {
+
+                                    // remove insertBinding for fields that are populated
+                                    // from previous fields.
+                                    delete insertBindings[i+f];
+                                    var strFromField = instruction.populateFrom[f][t];
+                                    var modelId = getStatementId(t,records,true,i);
+                                    if(modelId == 'NOTFOUND') {
+                                        console.dir(records);
+                                        callback('Table ['+t+'] was not found in the above list of records');
+                                        return;
+                                    }
+                                    var strVarToPopulateFrom = '@' + modelId+strFromField;
+                                    var strToField = '@' + i + f;
+                                    var strReplaceField = '@'+i+f;
+                                    var strReplacement = strVarToPopulateFrom;
+                                    insertSql = insertSql.replace(strReplaceField,strReplacement);
+                                }
+                            }
+                        }
+                        util._extend(boundParameters,insertBindings);
+                        strSql += insertSql;
+                        strSql += "\nSELECT @"+scopeIdVariable+" = SCOPE_IDENTITY();\n";
+                    }
+                    // Now go back through the sequences and replace their target field names
+                    // with the sequence name
+                    for(var i=0;i<records.length;i++) {
+                        var instruction = records[i];
+                        if(instruction['sequences']) {
+                            for(var n in instruction.sequences) {
+                                var sequenceModelId = getStatementId(instruction.sequences[n],records);
+                                var strFrom = '@'+i+n;
+                                var strTo   = '@seq'+n;
+                                var regex = new RegExp(strFrom, 'g');
+                                strSql = strSql.replace(regex,strTo);
+                            }
+                        }
+                    }
+                    strSql = strSql.replace(/@[A-Za-z0-9]+ = (@seq[A-Za-z0-9]+),/g,'$1,');
+
+                    var unions = [];
+                    for(var i=0;i<declaredVariables.length;i++) {
+                        if(declaredVariables[i].indexOf('seq') == -1) {
+                            var cnt = declaredVariables[i].replace(/pk([0-9]+)[^0-9]+.*/,'$1');
+                            unions.push("\nSELECT "+cnt+" AS id, '"+declaredVariables[i]+"' AS varname, @"+declaredVariables[i]+" AS value\n");
+                        }
+                    }
+                    strSql += unions.join("\nUNION ALL\n");
+
+                    // Now go back and select all of the primary key values from the records inserted.
+                    //console.log(strSql);
+
+                    callback();
+
                 };
 
-                var tasks = [];
-                tasks.push(connect);
-                for(var i=0;i<modelWriters.length;i++) {
-                    tasks.push(modelWriters[i]);
+                function executeTransaction(callback) {
+                    console.log('Executing transaction');
+                    round.query(strSql,boundParameters).then(function(results) {
+                        for(var i = 0;i<results.length;i++) {
+                            var record = records[i];
+                            var model = record.model;
+                            var pk    = model.primaryKey;
+                            model[pk] = results[i].value;
+                            var allowedJsonProperties = Object.keys(model.columns);
+                            var created = {
+                                'table': record.table
+                               ,'row': JSON.parse(JSON.stringify(model,allowedJsonProperties))
+                            };
+                            if(record.deleteCascade) {
+                                created.deleteCascade = record.deleteCascade;
+                            }
+                            records[i].row;
+                            outputObjects.push(created);
+                        }
+                        callback();
+                    },function(err) {
+                        callback(err);
+                    });
                 }
-                tasks.push(commit);
 
-                var writeFile = function(callback) {
+                function writeFile(callback) {
                     // write the objects to the file system and exit
-                    var strContents = JSON.stringify(recordsCreated,null,4);
+                    var strContents = JSON.stringify(outputObjects,null,4);
                     var strCaseDefSanitized = caseDef.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
                     var strFile = strCaseDefSanitized + '_' + md5(strContents) + '.json';
                     var strPath = path.normalize(outputdir + '/') + strFile;
@@ -368,20 +341,42 @@ module.exports = function(casefile,outputdir) {
                         callback();
                     });
                 };
-                tasks.push(writeFile);
 
-                console.log('Composing sequence.',tasks);
-                async.waterfall(tasks,function(err,results) {
+                var commitTryCount = 0;
+                var commit = function(callback) {
+                    commitTryCount++;
+
+                    transaction.commit().then(function() {
+                        console.log('COMMITTED');
+                        callback();
+                    },function(reason) {
+                        if(reason.code == 'EREQINPROG' && commitTryCount < 5) {
+                            setTimeout(function() {
+                                commit(callback);
+                            },1000);
+                            return;
+                        }
+                        console.log('NOT COMMITTED: tried ' + commitTryCount + ' times.');
+                        callback(reason);
+                    });
+                };
+
+                async.series([
+                    connect
+                    ,discoverAllModels
+                    ,writeSql
+                    ,executeTransaction
+                    ,commit
+                    ,writeFile
+                ],function(err) {
                     if(err) {
-                        console.log('ERROR: ');
-                        console.dir(err);
-                        caseCallback(reason);
+                        caseCallback(err);
+                        return;
                     }
-                    process.exit(0);
                     caseCallback();
                 });
-
             };
+
         };
 
         setupCase(testCase)(function(err) {

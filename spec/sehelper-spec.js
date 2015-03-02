@@ -5,7 +5,40 @@ var sehelper    = require('../sehelper');
 
 describe('after connecting,', function() {
 
-    describe('when using roundsql,',function() {
+    describe('when configuring sehelper,',function() {
+        var connection = { connected: false };
+        var transaction = { connected: false };
+        var begun = false;
+        var round;
+        var se;
+        var config = {
+            user       : process.env.ROUNDSQL_USER
+           ,password   : process.env.ROUNDSQL_PASS
+           ,server     : process.env.ROUNDSQL_HOST
+           ,database   : process.env.ROUNDSQL_DBNAME
+           ,port       : process.env.ROUNDSQL_PORT
+        };
+
+        beforeAll(function(done) {
+            connection = new mssql.Connection(config,function(err) {
+                if(err) {
+                    console.log('CONNECTION ERR: ' + err.message);
+                }
+                transaction = new mssql.Transaction(connection);
+                round = new roundsql(mssql,transaction);
+                se = new sehelper(round);
+                transaction.begin().then(function() {
+                    begun = true;
+                    done();
+                },function(reason) {
+                    console.log('TRANSACTION NOT BEGUN: ', reason);
+                    done();
+                });
+            });
+        });
+    });
+
+    describe('when using sehelper,',function() {
 
         var connection = { connected: false };
         var transaction = { connected: false };
@@ -13,11 +46,11 @@ describe('after connecting,', function() {
         var round;
         var se;
         var config = {
-            user: process.env.DMS_US_USER
-           ,password: process.env.DMS_US_PASS
-           ,server: process.env.DMS_US_PROTRACTOR_HOST
-           ,database: process.env.DMS_US_DBNAME
-           ,port: process.env.DMS_US_PROTRACTOR_PORT
+            user       : process.env.ROUNDSQL_USER
+           ,password   : process.env.ROUNDSQL_PASS
+           ,server     : process.env.ROUNDSQL_HOST
+           ,database   : process.env.ROUNDSQL_DBNAME
+           ,port       : process.env.ROUNDSQL_PORT
         };
 
         beforeAll(function(done) {

@@ -2,12 +2,12 @@
   "name": "caseman",
   "version": "0.0.3",
   "description": "Easily manage test case record setups for MSSQL databases",
-  "main": "caseman.js",
+  "main": "index.js",
   "scripts": {
     "test": "jasmine"
   },
   "bin": {
-    "caseman": "./caseman.js"
+    "caseman": "./index.js"
   },
   "repository": {
     "type": "git",

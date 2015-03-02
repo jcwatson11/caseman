@@ -12,18 +12,18 @@ var program = require('commander');
 
 program
     .version(pkg.version)
-    .command("build <infile> <outputdir>")
+    .command("build <infile> <outputdir> [config]")
     .description('build records defined in case <infile> and record records built in <outputdir>')
-    .action(function(infile, outputdir, options) {
+    .action(function(infile, outputdir, config, options) {
         var dir = path.resolve(outputdir);
-        caseloader(infile, dir);
+        caseloader(infile, dir, config);
     });
 
 program
-    .command("teardown <outputfile>")
+    .command("teardown <outputfile> [config]")
     .description('delete records defined in the <outputfile> created by the build command.')
-    .action(function(outputfile, options) {
-        caseremover(outputfile);
+    .action(function(outputfile, config, options) {
+        caseremover(outputfile, config);
     });
 
 program.on('--help', function(){

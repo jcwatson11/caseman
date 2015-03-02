@@ -7,33 +7,34 @@ var fs          = require('fs');
 var md5         = require('MD5');
 var path        = require('path');
 
-module.exports = function(recordfile) {
+module.exports = function(recordfile,configfile) {
 
     var inputFile = path.resolve(recordfile);
 
     var records = require(inputFile);
 
     if(!Array.isArray(records)) {
-        console.log('ERROR: Could not read ' + recordfile + '. File must be a JSON file containing an array of record objects.');
+        console.log('ERROR: Could not read ' + inputFile + '. File must be a JSON file containing an array of record objects.');
         return;
     }
 
-    var config = {
-        user: process.env.DMS_US_USER
-       ,password: process.env.DMS_US_PASS
-       ,server: process.env.DMS_US_PROTRACTOR_HOST
-       ,database: process.env.DMS_US_DBNAME
-       ,port: process.env.DMS_US_PROTRACTOR_PORT
-    };
+    // Validate configfile is readable
+    var configfile = (configfile) ? path.resolve(configfile):path.resolve('.')+'/caseman.js';
+    var config = require(configfile);
+
+    // Just in case there was a problem with getting the case definition file.
+    if(Object.keys(config).length == 0) {
+        console.log('ERROR: Could not get configuration file: ' + configfile);
+        return;
+    }
 
     (function(records) {
         var transaction    = null;
         var round          = null;
-        var se             = null;
         var self           = this;
 
         var connect     = function(callback) {
-            var connection = new mssql.Connection(config,function(err) {
+            var connection = new mssql.Connection(config.mssql,function(err) {
                 console.log('Connection established...');
                 if(err) {
                     console.log('ERROR: ' + err.message);
@@ -45,8 +46,6 @@ module.exports = function(recordfile) {
                 transaction.begin().then(function() {
                     console.log("transaction begun");
                     round = new roundsql(mssql,transaction);
-                    se = new sehelper(round);
-                    console.log('calling callback');
                     callback(null);
                 },function(reason) {
                     callback(reason);
@@ -55,129 +54,121 @@ module.exports = function(recordfile) {
         };
         self.connect = connect;
 
-        function createRemovalFunction(r) {
-            return function remove(callback) {
-                var delRecord = function(cascadeCallback) {
-                    round.discoverModel(r.table,r.table,{}).then(function(models) {
-                        var m = models[r.table];
-                        var where = {};
-                        where[m.primaryKey] = {"value": r.row[m.primaryKey]};
-                        m.findAll(where).then(function(results) {
-                            console.log("DELETE FROM ["+r.table+"] WHERE ["+m.primaryKey+"] = " + r.row[m.primaryKey]);
-                            if(results.length == 0) {
-                                console.log('Record already deleted');
-                                cascadeCallback(null);
-                                return;
-                            }
-                            results[0].delete().then(function() {
-                                console.log("DELETE SUCCESS");
-                                cascadeCallback(null);
-                            },function(reason) {
-                                cascadeCallback(reason);
-                            });
-                        },function(reason) {
-                            cascadeCallback(reason);
-                        });
-                    },function(reason) {
-                        console.log(r.table + ': Model discovery error');
-                        cascadeCallback(reason);
-                    });
-                };
-                var createDeleteCascader = function(table,localKey,foreignKey) {
-                    return function(cascadeCallback) {
-                        round.discoverModel(table,table,{}).then(function(models) {
-                            var m = models[table];
-                            var where = {};
-                            where[foreignKey] = {"value": r.row[localKey]};
-                            m.findAll(where).then(function(results) {
-                                console.log("DELETE FROM ["+table+"] WHERE ["+foreignKey+"] = " + r.row[localKey]);
-                                if(results.length == 0) {
-                                    console.log('Record already deleted');
-                                    cascadeCallback(null);
-                                    return;
-                                }
-                                var deleteTasks = [];
-                                var createDeleteTask = function(recordToDelete) {
-                                    return function(delCallback) {
-                                        recordToDelete.delete().then(function() {
-                                            console.log("DELETE SUCCESS");
-                                            delCallback(null);
-                                        },function(reason) {
-                                            delCallback(reason);
-                                        });
-                                    }
-                                }
-                                var toDelete = 1;
-                                while(toDelete = results.pop()) {
-                                    deleteTasks.push(createDeleteTask(toDelete));
-                                }
-                                async.series(deleteTasks,function(err,results) {
-                                    if(err) {
-                                        console.log("CASCADE DELETE ERROR: ");
-                                        console.dir(err);
-                                        cascadeCallback(err);
-                                    }
-                                    cascadeCallback(null);
-                                });
-                            },function(reason) {
-                                cascadeCallback(reason);
-                            });
-                        },function(reason) {
-                            cascadeCallback(reason);
-                        });
-                    }
-                };
-                var cascadeTasks = [];
-                if(r.deleteCascade) {
-                    console.log();
-                    for(var t in r.deleteCascade) {
-                        var localKey = null;
-                        var foreignKey = null;
-                        for(var lk in r.deleteCascade[t]) {
-                            localKey = lk;
-                            foreignKey = r.deleteCascade[t][lk]
-                        }
-                        cascadeTasks.push(createDeleteCascader(t,localKey,foreignKey));
-                    }
-                }
-                cascadeTasks.push(delRecord);
-                async.series(cascadeTasks,function(err,results) {
-                    if(err) {
-                        console.log("CASCADE ERROR: ");
-                        console.dir(err);
-                        callback(err);
-                    }
-                    callback(null);
-                });
-            };
-        }
-
         // Master Task List for the entire list of records defined in the JSON file.
         var removalTasks = [connect];
-        var rec = 1;
         console.log('Setting up '+records.length+' records for teardown.');
-        while(rec = records.pop()) {
-            removalTasks.push(createRemovalFunction(rec));
+
+        var strSql = '';
+        var models = {};
+
+        function discoverAllModels(callback) {
+            var tables = [];
+            for(var i=0;i<records.length;i++) {
+                tables.push(records[i].table);
+            }
+
+            var strSql = round.getColumnsSql(tables);
+            var modelDefs = {};
+            var modelCols = {};
+            console.log('running model discovery sql');
+            round.query(strSql).then(function(results) {
+                for(var i=0;i<results.length;i++) {
+                    var result = results[i];
+                    var strTable = result.TABLE_NAME;
+                    var strField = result.COLUMN_NAME;
+                    if(typeof modelDefs[strTable] == 'undefined') {
+                        modelDefs[strTable] = [];
+                    }
+                    modelDefs[strTable].push(result);
+                }
+                for(var i in modelDefs) {
+                    modelCols[i] = round.translateColumns(modelDefs[i]);
+                }
+                for(var i in modelCols) {
+                    models[i] = round.generateModel(i,i,{},modelCols[i]);
+                }
+                callback();
+            },function(err) {
+                callback(err);
+            });
         }
+        removalTasks.push(discoverAllModels);
+
+        function findCascadingDeleteTableValues() {
+            console.log('cascade deleting where necessary...');
+            for(var i=records.length-1;i>=0;i--) {
+                var record = records[i];
+                if(record.deleteCascade) {
+                    var cascadeDeleteFunctionGetter = (function(record) {
+                        return function(callback) {
+                            var model        = models[record.table];
+                            var modelPk      = model.primaryKey;
+                            var modelPkValue = record.row[modelPk];
+                            var where = {};
+                            where[modelPk] = {"value":modelPkValue};
+                            model.setDebug(true);
+                            model.findAll(where).then(function(results) {
+                                if(results.length == 0) {
+                                    callback("Unexpected empty results. Searched for a row in " + record.table + " where: " + JSON.stringify(where));
+                                }
+                                record.row = results[0];
+                                // now loop through the deleteCascade items and construct the delete
+                                // statements.
+                                for(var table in record.deleteCascade) {
+                                    for(var localKey in record.deleteCascade[table]) {
+                                        var foreignKey = record.deleteCascade[table][localKey];
+                                        strSql += "\nDELETE FROM ["+table+"] WHERE ["+foreignKey+"] = " + record.row[localKey];
+                                    }
+                                }
+                                callback();
+                            },function(err) {
+                                callback(err);
+                            });
+                        };
+                    })(record);
+                    removalTasks.push(cascadeDeleteFunctionGetter);
+                }
+            }
+        }
+        findCascadingDeleteTableValues();
+
+        function deleteTheRest(callback) {
+            console.log('setting up '+records.length+' delete statements...');
+            for(var i=records.length-1;i>=0;i--) {
+                var record = records[i];
+                var model  = models[record.table];
+                strSql += "\nDELETE FROM ["+record.table+"] WHERE ["+model.primaryKey+"] = "+record.row[model.primaryKey];
+            }
+            process.nextTick(callback);
+        }
+        removalTasks.push(deleteTheRest);
+
+        function executeTransaction(callback) {
+            console.log('executing transaction');
+            round.query(strSql).then(function(results) {
+                console.log('transaction has no errors. about to commit.');
+                callback();
+            },function(err) {
+                callback(err);
+            });
+        }
+        removalTasks.push(executeTransaction);
 
         var commitTryCount = 0;
         var commit = function(callback) {
             commitTryCount++;
-            console.log('Calling commit callback.');
 
             transaction.commit().then(function() {
                 console.log('COMMITTED');
                 callback();
             },function(reason) {
-                console.log("COMMIT ATTEMPT "+commitTryCount+" FAILED");
                 if(reason.code == 'EREQINPROG' && commitTryCount < 5) {
-                    console.log("Trying commit again...");
                     setTimeout(function() {
                         commit(callback);
                     },1000);
                     return;
                 }
-                console.log('NOT COMMITTED');
+                console.log('NOT COMMITTED: tried ' + commitTryCount + ' times.');
                 callback(reason);
             });
         };
