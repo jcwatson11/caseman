@@ -1,7 +1,6 @@
 var mssql       = require('mssql');
 var path        = require('path');
 var roundsql    = require('roundsql');
-var sehelper    = require('../sehelper');
 var async       = require('async');
 var q           = require('q');
 var fs          = require('fs');
