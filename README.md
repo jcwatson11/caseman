@@ -20,8 +20,7 @@ module.exports = {
         /**
          * Returns the next number for the secondary primary key for a given table.
          * Yes. I know tables shouldn't have a secondary primary key. Good luck telling
-         * Donor Direct that. Maybe the next database they design will have a measure
-         * of sanity after you talk to them.
+         * the DB designer that.
          *
          * @param strTableName string name of the table you want to get the next number for.
          * @return promise that resolves with an integer ID
@@ -200,8 +199,6 @@ module.exports = {
     }
 ]};
 ```
-
-The above test case was created for Donor Direct's Studio Enterprise system to test a single account login.
 
 #### Input file properties
 
