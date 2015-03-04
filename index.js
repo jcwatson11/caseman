@@ -38,15 +38,8 @@ program.on('--help', function(){
       console.log('');
 });
 
-program
-    .command("")
-    .description('')
-    .action(function(outputfile, options) {
-        program.help();
-    });
-
 program.parse(process.argv);
 
-if (!program.args.length) {
+if (!program.args.length || (['build','teardown'].indexOf(program.args[0]) == -1)) {
     program.help();
 }
