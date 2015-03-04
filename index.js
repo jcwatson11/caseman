@@ -38,8 +38,24 @@ program.on('--help', function(){
       console.log('');
 });
 
+function isValidCommand() {
+    var validCommands = ['build','teardown'];
+    if(program.args) {
+        if(program.args[3]) {
+            if(validCommands.indexOf(program.args[3]._name) > -1) {
+                return true;
+            }
+        } else if(program.args[2]) {
+            if(validCommands.indexOf(program.args[2]._name) > -1) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 program.parse(process.argv);
 
-if (!program.args.length || (['build','teardown'].indexOf(program.args[0]) == -1)) {
+if (!program.args.length || !isValidCommand()) {
     program.help();
 }
