@@ -1,6 +1,7 @@
 'use strict';
 const mssql = require('mssql');
 const CaseLoader = require('../caseloader');
+const CaseRemover = require('../caseremover');
 const CaseSetter = require('../caseloader/casesetter');
 const RoundSql = require('roundsql');
 const Model = require('roundsql/model');
@@ -66,6 +67,10 @@ describe("When using the caseloader", () => {
         expect(context1.caseman.loader instanceof CaseLoader).toBeTruthy();
     });
 
+    it("CaseMan can set the caseremover when constructing", () => {
+        expect(context1.caseman.remover instanceof CaseRemover).toBeTruthy();
+    });
+
     it("CaseMan will pass the config file to CaseLoader", () => {
         expect(context1.caseman.loader.config).toBe(config);
     });
@@ -85,7 +90,8 @@ describe("When using the caseloader", () => {
             done();
         }).bind(null, done);
 
-        var loader = context2.caseman.loader;
+        var loader = context1.caseman.loader;
+        var remover = context1.caseman.remover;
         loader.testCase = testCase;
         var setter = new CaseSetter(loader);
         setter.discoverAllModels()
@@ -95,14 +101,40 @@ describe("When using the caseloader", () => {
             }
             setter.writeSql().then(((strSql) => {
                 expect(strSql).toEqual(specSql);
-                setter.executeTransaction(strSql).then(((outputObjects) => {
-                    expect(outputObjects.length).toEqual(5);
-                    expect(outputObjects[0].table).toEqual('A01aAccountNotes');
+                setter.executeTransaction(strSql).then(((records) => {
+                    // Testing insertion results
+                    expect(records.length).toEqual(5);
+                    expect(records[0].table).toEqual('A01_AccountMaster');
+                    expect(records[1].table).toEqual('A03_AddressMaster');
+                    expect(records[2].table).toEqual('A02_AccountAddresses');
+                    expect(records[3].table).toEqual('A07_AccountEmails');
+                    expect(records[4].table).toEqual('A01aAccountNotes');
                     // test commit
-                    setter.commit(context2.transaction).then(((bSuccess) => {
+                    setter.commit(context1.transaction).then(((bSuccess) => {
                         expect(bSuccess).toBeTruthy();
-                        done();
+                        context1.transaction.begin()
+                        .then(() => {
+                            // Testing preparation of clean-up SQL statements
+                            remover.writeSql(models, records)
+                            .then((strCascadedDeletes) => {
+                                // Second Transaction
+                                var regexExpected = /\nDELETE FROM \[T07_TransactionResponseMaster\] WHERE \[AddressId\] = [0-9]+\n\nDELETE FROM \[A02_AccountAddresses\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A05_AccountCommunications\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A06_AccountSalutations\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A10_AccountPledges\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T01_TransactionMaster\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T16_RecurringTransactionHeaders\] WHERE \[AccountNumber\] = [0-9]+\n\nDELETE FROM \[A01aAccountNotes\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A02_AccountAddresses\] WHERE \[RecordID\] = [0-9]+\nDELETE FROM \[A03_AddressMaster\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01_AccountMaster\] WHERE \[RecordId\] = [0-9]+/;
+                                expect(strCascadedDeletes).toMatch(regexExpected);
+                                remover.executeTransaction(strCascadedDeletes)
+                                .then((bSuccess) => {
+                                    expect(bSuccess).toBe(true);
+                                    setter.commit(context1.transaction)
+                                    .then((bSuccess) => {
+                                        expect(bSuccess).toBe(true);
+                                        done();
+                                    });
+                                });
+                            },errHandler)
+                            .catch(errHandler);
+                        },errHandler)
+                        .catch(errHandler);
                     }).bind(setter),errHandler).catch(errHandler);
+
                 }).bind(setter),errHandler).catch(errHandler);
             }).bind(setter),errHandler).catch(errHandler);
         },errHandler).catch(errHandler)

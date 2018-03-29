@@ -5,196 +5,99 @@ var q           = require('q');
 var fs          = require('fs');
 var md5         = require('MD5');
 var path        = require('path');
+var Promise     = require('bluebird');
 
-module.exports = function(recordfile,configfile) {
-
-    var inputFile = path.resolve(recordfile);
-
-    var records = require(inputFile);
-
-    if(!Array.isArray(records)) {
-        console.log('ERROR: Could not read ' + inputFile + '. File must be a JSON file containing an array of record objects.');
-        return;
+class CaseRemover {
+    constructor(caseman) {
+        this.config = caseman.config;
+        this.round = caseman.round;
     }
 
-    // Validate configfile is readable
-    var configfile = (configfile) ? path.resolve(configfile):path.resolve('.')+'/caseman.js';
-    var config = require(configfile);
-
-    // Just in case there was a problem with getting the case definition file.
-    if(Object.keys(config).length == 0) {
-        console.log('ERROR: Could not get configuration file: ' + configfile);
-        return;
+    destroyCase(models, records) {
+        return new Promise(((resolve, reject) => {
+            this.discoverAllModels()
+            .then(((resolve,reject,models) => {
+                this.writeSql(models, records)
+                .then(((strSql) => {
+                    this.executeTransaction(strSql)
+                    .then(((resolve,reject) => {
+                        this.commit()
+                        .then(((resolve,reject) => {
+                            resolve();
+                        }).bind(this,resolve,reject),reject).catch(reject);
+                    }).bind(this,resolve,reject),reject).catch(reject);
+                }).bind(this,resolve,reject),reject).catch(reject);
+            }).bind(this,resolve,reject),reject).catch(reject);
+        }).bind(this))
     }
 
-    (function(records) {
-        var transaction    = null;
-        var round          = null;
-        var self           = this;
-
-        var connect     = function(callback) {
-            var connection = new mssql.Connection(config.mssql,function(err) {
-                console.log('Connection established...');
-                if(err) {
-                    console.log('ERROR: ' + err.message);
-                    callback(err);
-                    return;
-                }
-                console.log('Creating transaction...');
-                transaction = new mssql.Transaction(connection);
-                transaction.begin().then(function() {
-                    console.log("transaction begun");
-                    round = new roundsql(mssql,transaction);
-                    callback(null);
-                },function(reason) {
-                    callback(reason);
-                });
-            });
-        };
-        self.connect = connect;
-
-        // Master Task List for the entire list of records defined in the JSON file.
-        var removalTasks = [connect];
-        console.log('Setting up '+records.length+' records for teardown.');
-
-        var strSql = '';
-        var models = {};
-
-        function discoverAllModels(callback) {
-            var tables = [];
-            for(var i=0;i<records.length;i++) {
-                tables.push(records[i].table);
-            }
-
-            var strSql = round.getColumnsSql(tables);
-            var modelDefs = {};
-            var modelCols = {};
-            console.log('running model discovery sql');
-            round.query(strSql).then(function(results) {
-                for(var i=0;i<results.length;i++) {
-                    var result = results[i];
-                    var strTable = result.TABLE_NAME;
-                    var strField = result.COLUMN_NAME;
-                    if(typeof modelDefs[strTable] == 'undefined') {
-                        modelDefs[strTable] = [];
-                    }
-                    modelDefs[strTable].push(result);
-                }
-                for(var i in modelDefs) {
-                    modelCols[i] = round.translateColumns(modelDefs[i]);
-                }
-                for(var i in modelCols) {
-                    models[i] = round.generateModel(i,i,{},modelCols[i]);
-                }
-                callback();
-            },function(err) {
-                callback(err);
-            });
-        }
-        removalTasks.push(discoverAllModels);
-
-        function findCascadingDeleteTableValues() {
-            console.log('cascade deleting where necessary...');
+    writeSql(models, records) {
+        return new Promise(((outerResolve, outerReject) => {
+            var aContexts = [];
             for(var i=records.length-1;i>=0;i--) {
                 var record = records[i];
                 if(record.deleteCascade) {
-                    var cascadeDeleteFunctionGetter = (function(record) {
-                        return function(callback) {
-                            var model        = models[record.table];
-                            var modelPk      = model.primaryKey;
-                            var modelPkValue = record.row[modelPk];
-                            var where = {};
-                            where[modelPk] = {"value":modelPkValue};
-                            model.setDebug(true);
-                            model.findAll(where).then(function(results) {
-                                if(results.length == 0) {
-                                    callback("Unexpected empty results. Searched for a row in " + record.table + " where: " + JSON.stringify(where));
-                                }
-                                record.row = results[0];
-                                // now loop through the deleteCascade items and construct the delete
-                                // statements.
-                                for(var table in record.deleteCascade) {
-                                    for(var localKey in record.deleteCascade[table]) {
-                                        var foreignKey = record.deleteCascade[table][localKey];
-                                        strSql += "\nDELETE FROM ["+table+"] WHERE ["+foreignKey+"] = " + record.row[localKey];
-                                    }
-                                }
-                                callback();
-                            },function(err) {
-                                callback(err);
-                            });
-                        };
-                    })(record);
-                    removalTasks.push(cascadeDeleteFunctionGetter);
+                    var context = {
+                        'record'        : records[i]
+                        ,'model'        : models[record.table]
+                        ,'modelPk'      : models[record.table].primaryKey
+                        ,'modelPkValue' : record.row[0][models[record.table].primaryKey]
+                        ,'where'        : {}
+                        ,'strSql'       : ''
+                    };
+                    context.where[context.modelPk] = {"type":this.round.mssql.VarChar(10),"value":context.modelPkValue};
+                    context.model.setDebug(true);
+                    aContexts.push(context);
                 }
             }
+            Promise.resolve(aContexts).mapSeries(((context) => {
+                return context.model.findAll(context.where).then(((results) => {
+                    if(results.length == 0) {
+                        console.log("Unexpected empty resultset. Searched for a row in " + record.table + " where: " + JSON.stringify(where));
+                        return '';
+                    }
+                    // now loop through the deleteCascade items and construct the delete
+                    // statements.
+                    for(var table in context.record.deleteCascade) {
+                        for(var localKey in context.record.deleteCascade[table]) {
+                            var foreignKey = context.record.deleteCascade[table][localKey];
+                            context.strSql += "\nDELETE FROM ["+table+"] WHERE ["+foreignKey+"] = " + context.record.row[0][localKey];
+                        }
+                    }
+                    return context.strSql;
+                }).bind(this),(err) => {
+                    console.log("Could not get information for removing deleteCascade group for record:", err);
+                }).catch((err) => {
+                    console.log("Could not get information for removing deleteCascade group for record:", err);
+                });
+            })
+            .bind(this))
+            .then(((aSqlStatements) => {
+                outerResolve(aSqlStatements.join("\n") + this.getTopLevelDeleteStatements(models, records));
+            }).bind(this),outerReject)
+            .catch(outerReject);
+        }).bind(this));
+    }
+
+    getTopLevelDeleteStatements(models, records) {
+        var strSql = "\n";
+        var reversed = records.reverse();
+        for(var i=0;i<reversed.length;i++) {
+            var record = reversed[i];
+            var model  = models[record.table];
+            strSql += "\nDELETE FROM ["+record.table+"] WHERE ["+model.primaryKey+"] = "+record.row[0][model.primaryKey];
         }
-        findCascadingDeleteTableValues();
+        return strSql;
+    }
 
-        function deleteTheRest(callback) {
-            console.log('setting up '+records.length+' delete statements...');
-            for(var i=records.length-1;i>=0;i--) {
-                var record = records[i];
-                var model  = models[record.table];
-                strSql += "\nDELETE FROM ["+record.table+"] WHERE ["+model.primaryKey+"] = "+record.row[model.primaryKey];
-            }
-            process.nextTick(callback);
-        }
-        removalTasks.push(deleteTheRest);
+    executeTransaction(strSql) {
+        return new Promise(((resolve, reject) => {
+            this.round.query(strSql).then(((results) => {
+                resolve(true);
+            }).bind(this),reject).catch(reject);
+        }).bind(this));
+    }
 
-        function executeTransaction(callback) {
-            console.log('executing transaction');
-            round.query(strSql).then(function(results) {
-                console.log('transaction has no errors. about to commit.');
-                callback();
-            },function(err) {
-                callback(err);
-            });
-        }
-        removalTasks.push(executeTransaction);
-
-        var commitTryCount = 0;
-        var commit = function(callback) {
-            commitTryCount++;
-
-            transaction.commit().then(function() {
-                console.log('COMMITTED');
-                callback();
-            },function(reason) {
-                if(reason.code == 'EREQINPROG' && commitTryCount < 5) {
-                    setTimeout(function() {
-                        commit(callback);
-                    },1000);
-                    return;
-                }
-                console.log('NOT COMMITTED: tried ' + commitTryCount + ' times.');
-                callback(reason);
-            });
-        };
-        removalTasks.push(commit);
-
-        var deleteFile = function(callback) {
-            fs.unlink(inputFile, function(err) {
-                if(err) {
-                    console.log("Error while trying to remove input file: " + inputFile);
-                    callback(err);
-                }
-                console.log("Input file deleted: " + inputFile);
-                callback();
-            });
-        };
-        removalTasks.push(deleteFile);
-
-        async.series(removalTasks,function(err,results) {
-            if(err) {
-                console.log("ERROR: ");
-                console.dir(err);
-                process.exit(1);
-            }
-            console.log("Records Removed: YAY! ");
-            process.exit(0);
-        });
-
-
-    })(records);
 }
+
+module.exports = CaseRemover;

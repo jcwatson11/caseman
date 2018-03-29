@@ -7,16 +7,15 @@ var fs          = require('fs');
 var md5         = require('MD5');
 var util        = require('util');
 const CaseLoader  = require('./caseloader');
+const CaseRemover  = require('./caseremover');
 
 class CaseMan {
 
     constructor(config, roundsql) {
         this.config = config;
         this.round = roundsql;
-        this.modelNames = null;
         this.loader = new CaseLoader(this);
-        // this.caseloader = new CaseLoader(this);
-        //this.caseremover = new CaseRemover(this);
+        this.remover = new CaseRemover(this);
 
         // Just in case there was a problem with the case definition.
         if(Object.keys(config).length == 0) {
@@ -25,6 +24,18 @@ class CaseMan {
         }
     }
 
+    /**
+     * Returns a function that will log the error and call the provided reject
+     * method.
+     * @param  {function} reject
+     * @return {function}
+     */
+    getErrorHandler(reject) {
+        return ((reject, err) => {
+            console.log(err);
+            reject(err);
+        }).bind(this,reject);
+    }
 }
 
 module.exports = CaseMan;

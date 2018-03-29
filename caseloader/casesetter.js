@@ -17,24 +17,25 @@ class CaseSetter {
         this.boundParameters = [];
         this.outputObjects = [];
         this.strSql = '';
-        this.commitTryCount = 0;
+        this.commitTryCount = 1;
     }
 
     /**
      * Executes the tree of promises in sequence to write the test case to the database
      * @return {Promise}
      */
-    loadCase() {
+    loadCase(transaction) {
         return new Promise(((resolve, reject) => {
             this.discoverAllModels()
             .then(((resolve,reject,models) => {
                 this.writeSql()
                 .then(((strSql) => {
                     this.executeTransaction(strSql)
-                    .then(((resolve,reject) => {
-                        this.commit()
+                    .then(((resolve,reject,outputObjects) => {
+                        var transaction = this.round.
+                        this.commit(transaction)
                         .then(((resolve,reject) => {
-                            resolve();
+                            resolve(outputObjects);
                         }).bind(this,resolve,reject),reject).catch(reject);
                     }).bind(this,resolve,reject),reject).catch(reject);
                 }).bind(this,resolve,reject),reject).catch(reject);
@@ -236,38 +237,40 @@ class CaseSetter {
             this.round.query(strSql,this.boundParameters).then(((results) => {
                 var aSqlGetters = [];
                 for(var i = 0;i<results.length;i++) {
-                    var record = this.records[i];
-                    var model = record.model;
+                    var model = this.records[i].model;
                     var pk    = model.primaryKey;
                     model[pk] = results[i].value;
-                    aSqlGetters.push({
-                        sql: "SELECT * FROM ["+model.tableName+"] WHERE ["+pk+"] = @primaryKey;"
-                        ,bindings: {'primaryKey': {'type': this.round.mssql.VarChar(10), 'value': results[i].value}}
-                    });
-                }
+                    var self = this;
+                    var getter = {
+                        'sql': "SELECT * FROM ["+model.tableName+"] WHERE ["+pk+"] = @primaryKey;"
+                        ,'bindings': {'primaryKey': {'type': this.round.mssql.VarChar(10), 'value': results[i].value}}
+                        ,'record': this.records[i]
+                        ,'model': this.records[i].model
+                    };
+                    aSqlGetters.push(getter);
 
-                const stepsResultsHandler = ((resolve,model,record,ar) => {
-                    for(var j=0;j<ar.length;j++) {
-                        var r = ar[j];
-                        var allowedJsonProperties = Object.keys(model.columns);
+                }
+                Promise.resolve(aSqlGetters).mapSeries(((getter) => {
+                    return this.round.query(getter.sql, getter.bindings)
+                    .then(((res) => {
                         var created = {
-                            'table': record.table
-                           ,'row': JSON.parse(JSON.stringify(r,allowedJsonProperties))
+                            'table': getter.record.table
+                           ,'row': res
                         };
-                        if(record.deleteCascade) {
-                            created.deleteCascade = record.deleteCascade;
+                        if(getter.record.deleteCascade) {
+                            created.deleteCascade = getter.record.deleteCascade;
                         }
                         this.outputObjects.push(created);
-                    }
+                        return created;
+                    })
+                    .bind(this),this.getErrorHandler(reject))
+                    .catch(this.getErrorHandler(reject));
+                })
+                .bind(this))
+                .then(((allResults) => {
                     resolve(this.outputObjects);
-                }).bind(this,resolve,model,record);
-
-                const sqlQuery = ((getter) => {
-                    return this.round.query(getter.sql, getter.bindings);
-                }).bind(this);
-
-                Promise.mapSeries(aSqlGetters,sqlQuery)
-                .then(stepsResultsHandler,this.getErrorHandler(reject)).catch(this.getErrorHandler(reject));
+                }).bind(this),this.getErrorHandler(reject))
+                .catch(this.getErrorHandler(reject));
 
             }).bind(this),this.getErrorHandler(reject)).catch(this.getErrorHandler(reject));
         }).bind(this));

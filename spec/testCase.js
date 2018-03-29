@@ -31,7 +31,7 @@ module.exports = {
            "AddressId": "A03_AddressMaster"
        }
        ,"deleteCascade": {
-           "TransactionResponseMaster":{"AddressId":"AddressId"}
+           "T07_TransactionResponseMaster":{"AddressId":"AddressId"}
        }
        ,"row": {
              "Type"           : "HOME"
