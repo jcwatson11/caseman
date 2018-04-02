@@ -4,7 +4,7 @@
   "description": "Easily manage test case record setups for MSSQL databases",
   "main": "index.js",
   "scripts": {
-    "test": "jasmine"
+    "test": "node runTest.js"
   },
   "bin": {
     "caseman": "./index.js"
@@ -34,6 +34,7 @@
     "roundsql": "1.0.1"
   },
   "devDependencies": {
+    "jasmine": "^3.1.0",
     "jasmine-core": "^3.1.0",
     "jasmine-utils": "~0.2.0"
   }

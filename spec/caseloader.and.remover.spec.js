@@ -27,14 +27,8 @@ const getContext = () => {
             context.transaction = new mssql.Transaction(context.connection);
             context.round = new RoundSql(mssql, context.transaction);
             context.caseman = new CaseMan(config, context.round);
-            context.transaction.begin()
-            .then(() => {
-                context.begun = true;
-                resolve(context);
-            }
-            ,errHandler
-            )
-            .catch(errHandler);
+            context.done = true;
+            resolve(context);
         });
     });
 }
@@ -44,6 +38,7 @@ describe("When using the caseloader", () => {
     var specSql = null;
     var context1 = null;
     var context2 = null;
+    var context3 = null;
 
     beforeAll((done) => {
         const specSqlPath = path.join(__dirname, 'spec.sql');
@@ -54,10 +49,16 @@ describe("When using the caseloader", () => {
         // Get the first context for basic functions
         getContext().then((context) => {
             context1 = context;
-            // Get the second context for database work
-            getContext().then((context) => {
-                context2 = context;
-                done();
+            context1.transaction.begin()
+            .then(() => {
+                // Get the second context for database work
+                getContext().then((context) => {
+                    context2 = context;
+                    getContext().then((context) => {
+                        context3 = context;
+                        done();
+                    },errHandler).catch(errHandler);
+                },errHandler).catch(errHandler);
             },errHandler).catch(errHandler);
         },errHandler).catch(errHandler);
 
@@ -84,60 +85,88 @@ describe("When using the caseloader", () => {
         done();
     });
 
-    it("CaseLoader can discover models, write Sql, execute the transaction and commit", (done) => {
+    it("CaseLoader can discover models, write Sql, execute the transaction, commit and remove an entire test case", (done) => {
         const errHandler = ((done, err) => {
             console.log('ERR:', err);
             done();
         }).bind(null, done);
 
-        var loader = context1.caseman.loader;
-        var remover = context1.caseman.remover;
-        loader.testCase = testCase;
+        var loader = context2.caseman.loader;
+        var remover = context2.caseman.remover;
         var setter = new CaseSetter(loader);
-        setter.discoverAllModels()
-        .then((models) => {
-            for(var i in models) {
-                expect(models[i] instanceof Model).toBeTruthy();
-            }
-            setter.writeSql().then(((strSql) => {
-                expect(strSql).toEqual(specSql);
-                setter.executeTransaction(strSql).then(((records) => {
-                    // Testing insertion results
-                    expect(records.length).toEqual(5);
-                    expect(records[0].table).toEqual('A01_AccountMaster');
-                    expect(records[1].table).toEqual('A03_AddressMaster');
-                    expect(records[2].table).toEqual('A02_AccountAddresses');
-                    expect(records[3].table).toEqual('A07_AccountEmails');
-                    expect(records[4].table).toEqual('A01aAccountNotes');
-                    // test commit
-                    setter.commit(context1.transaction).then(((bSuccess) => {
-                        expect(bSuccess).toBeTruthy();
-                        context1.transaction.begin()
-                        .then(() => {
-                            // Testing preparation of clean-up SQL statements
-                            remover.writeSql(models, records)
-                            .then((strCascadedDeletes) => {
-                                // Second Transaction
-                                var regexExpected = /\nDELETE FROM \[T07_TransactionResponseMaster\] WHERE \[AddressId\] = [0-9]+\n\nDELETE FROM \[A02_AccountAddresses\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A05_AccountCommunications\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A06_AccountSalutations\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A10_AccountPledges\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T01_TransactionMaster\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T16_RecurringTransactionHeaders\] WHERE \[AccountNumber\] = [0-9]+\n\nDELETE FROM \[A01aAccountNotes\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A02_AccountAddresses\] WHERE \[RecordID\] = [0-9]+\nDELETE FROM \[A03_AddressMaster\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01_AccountMaster\] WHERE \[RecordId\] = [0-9]+/;
-                                expect(strCascadedDeletes).toMatch(regexExpected);
-                                remover.executeTransaction(strCascadedDeletes)
-                                .then((bSuccess) => {
-                                    expect(bSuccess).toBe(true);
-                                    setter.commit(context1.transaction)
+        loader.testCase = testCase;
+        context2.transaction.begin()
+        .then((() => {
+            setter.discoverAllModels()
+            .then(((models) => {
+                for(var i in models) {
+                    expect(models[i] instanceof Model).toBeTruthy();
+                }
+                setter.writeSql(models).then(((strSql) => {
+                    expect(strSql).toEqual(specSql);
+                    setter.executeTransaction(strSql).then(((records) => {
+                        // Testing insertion results
+                        expect(records.length).toEqual(5);
+                        expect(records[0].table).toEqual('A01_AccountMaster');
+                        expect(records[1].table).toEqual('A03_AddressMaster');
+                        expect(records[2].table).toEqual('A02_AccountAddresses');
+                        expect(records[3].table).toEqual('A07_AccountEmails');
+                        expect(records[4].table).toEqual('A01aAccountNotes');
+                        // test commit
+                        setter.commit(context2.transaction).then(((bSuccess) => {
+                            expect(bSuccess).toBeTruthy();
+                            context2.transaction.begin()
+                            .then(() => {
+                                // Testing preparation of clean-up SQL statements
+                                remover.writeSql(models, records)
+                                .then((strCascadedDeletes) => {
+                                    // Second Transaction
+                                    var regexExpected = /\nDELETE FROM \[T07_TransactionResponseMaster\] WHERE \[AddressId\] = [0-9]+\n\nDELETE FROM \[A02_AccountAddresses\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A05_AccountCommunications\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A06_AccountSalutations\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A10_AccountPledges\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T01_TransactionMaster\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T16_RecurringTransactionHeaders\] WHERE \[AccountNumber\] = [0-9]+\n\nDELETE FROM \[A01aAccountNotes\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A02_AccountAddresses\] WHERE \[RecordID\] = [0-9]+\nDELETE FROM \[A03_AddressMaster\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01_AccountMaster\] WHERE \[RecordId\] = [0-9]+/;
+                                    expect(strCascadedDeletes).toMatch(regexExpected);
+                                    remover.executeTransaction(strCascadedDeletes)
                                     .then((bSuccess) => {
                                         expect(bSuccess).toBe(true);
-                                        done();
+                                        setter.commit(context2.transaction)
+                                        .then((bSuccess) => {
+                                            expect(bSuccess).toBe(true);
+                                            context2.done = true;
+                                            done();
+                                        });
                                     });
-                                });
+                                },errHandler)
+                                .catch(errHandler);
                             },errHandler)
                             .catch(errHandler);
-                        },errHandler)
-                        .catch(errHandler);
+                        }).bind(setter),errHandler).catch(errHandler);
                     }).bind(setter),errHandler).catch(errHandler);
-
                 }).bind(setter),errHandler).catch(errHandler);
-            }).bind(setter),errHandler).catch(errHandler);
-        },errHandler).catch(errHandler)
+            }).bind(this),errHandler).catch(errHandler)
+        }).bind(this), errHandler).catch(errHandler);
+    });
+
+    it("Caseman can create and remove a test case using its own controlling methods.", (done) => {
+        const errHandler = ((done, err) => {
+            console.log('ERR:', err);
+            done();
+        }).bind(null, done);
+
+        const thisTest = () => {
+            if(context2.done) {
+                const man = context3.caseman;
+                man.loader.loadTestCase(testCase).then((ret) => {
+                    expect(Object.keys(ret.models).length).toEqual(5);
+                    expect(ret.records.length).toEqual(5);
+                    man.remover.destroyCase(ret.models, ret.records)
+                    .then((bSuccess) => {
+                        expect(bSuccess).toBe(true);
+                        done();
+                    },errHandler).catch(errHandler);
+                });
+            } else {
+                setTimeout(thisTest, 1000);
+            }
+        };
+        thisTest();
     });
 
 });

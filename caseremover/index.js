@@ -9,25 +9,25 @@ var Promise     = require('bluebird');
 
 class CaseRemover {
     constructor(caseman) {
+        this.caseman = caseman;
         this.config = caseman.config;
         this.round = caseman.round;
     }
 
-    destroyCase(models, records) {
-        return new Promise(((resolve, reject) => {
-            this.discoverAllModels()
-            .then(((resolve,reject,models) => {
-                this.writeSql(models, records)
+    destroyCase(models,records) {
+        return new Promise(((resolve,reject) => {
+            this.round.connection.begin().then((() => {
+                this.writeSql(models,records)
                 .then(((strSql) => {
                     this.executeTransaction(strSql)
-                    .then(((resolve,reject) => {
-                        this.commit()
-                        .then(((resolve,reject) => {
-                            resolve();
-                        }).bind(this,resolve,reject),reject).catch(reject);
-                    }).bind(this,resolve,reject),reject).catch(reject);
-                }).bind(this,resolve,reject),reject).catch(reject);
-            }).bind(this,resolve,reject),reject).catch(reject);
+                    .then((() => {
+                        this.caseman.loader.setter.commit(this.round.connection)
+                        .then((() => {
+                            resolve(true);
+                        }).bind(this),reject).catch(reject);
+                    }).bind(this),reject).catch(reject);
+                }).bind(this),reject).catch(reject);
+            }).bind(this),reject).catch(reject)
         }).bind(this))
     }
 

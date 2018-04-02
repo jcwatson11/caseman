@@ -95,6 +95,7 @@ class CaseLoader {
             throw 'ERROR: The case definition object is in an unexpected format.';
         }
         var setter = new CaseSetter(this);
+        this.setter = setter;
         return setter.loadCase();
     }
 

@@ -11,11 +11,9 @@ class CaseSetter {
     constructor(caseloader) {
         this.round = caseloader.round;
         this.loader = caseloader;
-        this.models = {};
         this.records = [];
         this.declaredVariables = [];
         this.boundParameters = [];
-        this.outputObjects = [];
         this.strSql = '';
         this.commitTryCount = 1;
     }
@@ -24,22 +22,25 @@ class CaseSetter {
      * Executes the tree of promises in sequence to write the test case to the database
      * @return {Promise}
      */
-    loadCase(transaction) {
+    loadCase() {
         return new Promise(((resolve, reject) => {
-            this.discoverAllModels()
-            .then(((resolve,reject,models) => {
-                this.writeSql()
-                .then(((strSql) => {
-                    this.executeTransaction(strSql)
-                    .then(((resolve,reject,outputObjects) => {
-                        var transaction = this.round.
-                        this.commit(transaction)
-                        .then(((resolve,reject) => {
-                            resolve(outputObjects);
-                        }).bind(this,resolve,reject),reject).catch(reject);
-                    }).bind(this,resolve,reject),reject).catch(reject);
-                }).bind(this,resolve,reject),reject).catch(reject);
-            }).bind(this,resolve,reject),reject).catch(reject);
+            this.round.connection.begin()
+            .then((() => {
+                this.discoverAllModels()
+                .then(((models) => {
+                    this.writeSql(models)
+                    .then(((strSql) => {
+                        this.executeTransaction(strSql)
+                        .then(((records) => {
+                            this.commit(this.round.connection)
+                            .then((() => {
+                                var res = {'models':models,'records':records};
+                                resolve(res);
+                            }).bind(this),reject).catch(reject);
+                        }).bind(this),reject).catch(reject);
+                    }).bind(this),reject).catch(reject);
+                }).bind(this),reject).catch(reject);
+            }).bind(this),reject).catch(reject);
         }).bind(this))
     }
 
@@ -91,15 +92,18 @@ class CaseSetter {
             // The array.pop() syntax has higher performance ratings than any other kind of loop
             var instruction = null;
             var tables = [];
-            while(instruction = this.loader.testCase.records.pop()) {
+            for(var i=0;i<this.loader.testCase.records.length;i++) {
+                var instruction = JSON.parse(JSON.stringify(this.loader.testCase.records[i]));
                 tables.push(instruction.table);
                 this.records.push(instruction);
             }
+            this.records = this.records.reverse();
 
             var strSql = this.round.getColumnsSql(tables);
             var modelDefs = {};
             var modelCols = {};
-            this.round.query(strSql).then(((modelDefs, modelCols, resolve, results) => {
+            var models = [];
+            this.round.query(strSql).then(((results) => {
                 for(var i=0;i<results.length;i++) {
                     var result = results[i];
                     var strTable = result.TABLE_NAME;
@@ -113,10 +117,10 @@ class CaseSetter {
                     modelCols[i] = this.round.translateColumns(modelDefs[i]);
                 }
                 for(var i in modelCols) {
-                    this.models[i] = this.round.generateModel(i,i,modelCols[i]);
+                    models[i] = this.round.generateModel(i,i,modelCols[i]);
                 }
-                resolve(this.models);
-            }).bind(this, modelDefs, modelCols, resolve),this.getErrorHandler(reject)).catch(this.getErrorHandler(reject));
+                resolve(models);
+            }).bind(this),this.getErrorHandler(reject)).catch(this.getErrorHandler(reject));
         }).bind(this));
     };
 
@@ -125,7 +129,7 @@ class CaseSetter {
      * defined in the test case definition
      * @return {Promise}
      */
-    writeSql() {
+    writeSql(models) {
         return new Promise(((resolve, reject) => {
             var strSql = '';
             this.records.reverse();
@@ -141,7 +145,7 @@ class CaseSetter {
                 }
                 var instruction = this.records[i];
                 var strTableName = this.records[i].table;
-                var model = this.models[strTableName].new();
+                var model = models[strTableName].new();
                 model.hydrate(instruction.row);
                 this.records[i].model = model;
                 var scopeIdVariable = "pk" +i+ strTableName;
@@ -260,15 +264,13 @@ class CaseSetter {
                         if(getter.record.deleteCascade) {
                             created.deleteCascade = getter.record.deleteCascade;
                         }
-                        this.outputObjects.push(created);
                         return created;
-                    })
-                    .bind(this),this.getErrorHandler(reject))
+                    }).bind(this),this.getErrorHandler(reject))
                     .catch(this.getErrorHandler(reject));
                 })
                 .bind(this))
                 .then(((allResults) => {
-                    resolve(this.outputObjects);
+                    resolve(allResults);
                 }).bind(this),this.getErrorHandler(reject))
                 .catch(this.getErrorHandler(reject));
 
