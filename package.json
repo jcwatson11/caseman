@@ -31,7 +31,7 @@
     "bluebird": "^3.5.1",
     "commander": "~2.6.0",
     "q": "~1.2.0",
-    "roundsql": "1.0.1"
+    "roundsql": "1.0.2"
   },
   "devDependencies": {
     "jasmine": "^3.1.0",
