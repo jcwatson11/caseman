@@ -14,11 +14,12 @@ class CaseRemover {
         this.round = caseman.round;
     }
 
-    destroyCase(models,records) {
+    destroyCase(models,records,prependedSql) {
         return new Promise(((resolve,reject) => {
             this.round.connection.begin().then((() => {
                 this.writeSql(models,records)
                 .then(((strSql) => {
+                    if(prependedSql) strSql = prependedSql + "\n" + strSql;
                     this.executeTransaction(strSql)
                     .then((() => {
                         this.caseman.loader.setter.commit(this.round.connection)
