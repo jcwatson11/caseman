@@ -30,6 +30,14 @@ INSERT INTO [A01aAccountNotes] ([AccountNumber],[NoteType],[ShortComment],[LongC
 
 SELECT @pk4A01aAccountNotes = SCOPE_IDENTITY();
 
+DECLARE @seqPledgeId bigint;
+EXEC [dbo].[X31_NextNumberBusinessDataSingleValueByType] @strType=N'PLEDGEID',@iNextNumber=@seqPledgeId OUTPUT
+
+DECLARE @pk5A10_AccountPledges bigint;
+INSERT INTO [A10_AccountPledges] ([AccountNumber],[PledgeCode],[PledgeId],[TotalAmount],[AmountPerGift],[PledgeFrequency],[NumberPledged],[StartDate],[EndDate],[OpenEnded],[PledgeStatus],[SourceCode],[CurrencyCode],[CancelReasonCode],[CancelDate],[ResponseId],[NbrOfAdjustmentMonths],[AcctNbrForPledgeStmtAndAck],[AcctNbrForPledgeInfoUpdates],[OriginalPledgeId],[AssignedToAccessorId]) VALUES (@seqAccountNumber, @5PledgeCode, @seqPledgeId, @5TotalAmount, @5AmountPerGift, @5PledgeFrequency, @5NumberPledged, @5StartDate, @5EndDate, @5OpenEnded, @5PledgeStatus, @5SourceCode, @5CurrencyCode, @5CancelReasonCode, @5CancelDate, @5ResponseId, @5NbrOfAdjustmentMonths, @5AcctNbrForPledgeStmtAndAck, @5AcctNbrForPledgeInfoUpdates, @seqPledgeId, @5AssignedToAccessorId);
+
+SELECT @pk5A10_AccountPledges = SCOPE_IDENTITY();
+
 SELECT 0 AS id, 'pk0A01_AccountMaster' AS varname, @pk0A01_AccountMaster AS value
 
 UNION ALL
@@ -47,3 +55,7 @@ SELECT 3 AS id, 'pk3A07_AccountEmails' AS varname, @pk3A07_AccountEmails AS valu
 UNION ALL
 
 SELECT 4 AS id, 'pk4A01aAccountNotes' AS varname, @pk4A01aAccountNotes AS value
+
+UNION ALL
+
+SELECT 5 AS id, 'pk5A10_AccountPledges' AS varname, @pk5A10_AccountPledges AS value

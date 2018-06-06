@@ -14,6 +14,7 @@ module.exports = {
            ,"A10_AccountPledges":{"AccountNumber":"AccountNumber"}
            ,"T01_TransactionMaster":{"AccountNumber":"AccountNumber"}
            ,"T16_RecurringTransactionHeaders":{"AccountNumber":"AccountNumber"}
+           ,"A14_AccountFirstContacts":{"AccountNumber":"AccountNumber"}
        }
        ,"row": {
              "FirstName"         : "TEST"
@@ -77,6 +78,27 @@ module.exports = {
             ,"ShortComment" : "testing"
             ,"LongComment"  : "testing"
             ,"DataSource"   : "FH"
+       }
+    }
+    ,{
+        "table":"A10_AccountPledges"
+       ,"sequences": {
+           "PledgeId": "A10_AccountPledges"
+       }
+       ,"populateFrom": {
+           "AccountNumber": {"A01_AccountMaster":"AccountNumber"}
+           ,"AccountNbrForPledgeInfoUpdates": {"A01_AccountMaster":"AccountNumber"}
+           ,"OriginalPledgeId": {"this":"PledgeId"}
+       }
+       ,"row": {
+             "PledgeCode"      : "0100110019"
+            ,"AmountPerGift"   : 38.00
+            ,"PledgeFrequency" : "M"
+            ,"StartDate"       : "2011-01-01"
+            ,"OpenEnded"       : 1
+            ,"PledgeStatus"    : "A"
+            ,"SourceCode"      : "WZZZW2ZZZ2"
+            ,"CurrencyCode"    : "USD"
        }
     }
 ]};

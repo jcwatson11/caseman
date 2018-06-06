@@ -106,7 +106,7 @@ describe("When using the caseloader", () => {
                     expect(strSql).toEqual(specSql);
                     setter.executeTransaction(strSql).then(((records) => {
                         // Testing insertion results
-                        expect(records.length).toEqual(5);
+                        expect(records.length).toEqual(6);
                         expect(records[0].table).toEqual('A01_AccountMaster');
                         expect(records[1].table).toEqual('A03_AddressMaster');
                         expect(records[2].table).toEqual('A02_AccountAddresses');
@@ -121,7 +121,7 @@ describe("When using the caseloader", () => {
                                 remover.writeSql(models, records)
                                 .then((strCascadedDeletes) => {
                                     // Second Transaction
-                                    var regexExpected = /\nDELETE FROM \[T07_TransactionResponseMaster\] WHERE \[AddressId\] = [0-9]+\n\nDELETE FROM \[A02_AccountAddresses\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A05_AccountCommunications\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A06_AccountSalutations\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A10_AccountPledges\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T01_TransactionMaster\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T16_RecurringTransactionHeaders\] WHERE \[AccountNumber\] = [0-9]+\n\nDELETE FROM \[A01aAccountNotes\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A02_AccountAddresses\] WHERE \[RecordID\] = [0-9]+\nDELETE FROM \[A03_AddressMaster\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01_AccountMaster\] WHERE \[RecordId\] = [0-9]+/;
+                                    var regexExpected = /\nDELETE FROM \[T07_TransactionResponseMaster\] WHERE \[AddressId\] = [0-9]+\n\nDELETE FROM \[A02_AccountAddresses\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A05_AccountCommunications\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A06_AccountSalutations\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A10_AccountPledges\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T01_TransactionMaster\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[T16_RecurringTransactionHeaders\] WHERE \[AccountNumber\] = [0-9]+\nDELETE FROM \[A14_AccountFirstContacts\] WHERE \[AccountNumber\] = [0-9]+\n\nDELETE FROM \[A10_AccountPledges\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01aAccountNotes\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A07_AccountEmails\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A02_AccountAddresses\] WHERE \[RecordID\] = [0-9]+\nDELETE FROM \[A03_AddressMaster\] WHERE \[RecordId\] = [0-9]+\nDELETE FROM \[A01_AccountMaster\] WHERE \[RecordId\] = [0-9]+/;
                                     expect(strCascadedDeletes).toMatch(regexExpected);
                                     remover.executeTransaction(strCascadedDeletes)
                                     .then((bSuccess) => {
@@ -154,8 +154,8 @@ describe("When using the caseloader", () => {
             if(context2.done) {
                 const man = context3.caseman;
                 man.loader.loadTestCase(testCase).then((ret) => {
-                    expect(Object.keys(ret.models).length).toEqual(5);
-                    expect(ret.records.length).toEqual(5);
+                    expect(Object.keys(ret.models).length).toEqual(6);
+                    expect(ret.records.length).toEqual(6);
                     man.remover.destroyCase(ret.models, ret.records)
                     .then((bSuccess) => {
                         expect(bSuccess).toBe(true);

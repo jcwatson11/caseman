@@ -38,10 +38,10 @@ module.exports = {
             };
     },
     mssql: {
-         user       : process.env.DMS_US_USER
-        ,password   : process.env.DMS_US_PASS
-        ,server     : process.env.DMS_US_HOST
-        ,database   : process.env.DMS_US_DBNAME
-        ,port       : process.env.DMS_US_PORT
+         user       : process.env.LOCAL_DMS_USER
+        ,password   : process.env.LOCAL_DMS_PASS
+        ,server     : process.env.LOCAL_DMS_HOST
+        ,database   : process.env.LOCAL_DMS_DBNAME
+        ,port       : process.env.LOCAL_DMS_PORT
     }
 };

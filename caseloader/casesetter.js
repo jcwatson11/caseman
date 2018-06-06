@@ -178,7 +178,12 @@ class CaseSetter {
                             // from previous fields.
                             delete insertBindings[i+f];
                             var strFromField = instruction.populateFrom[f][t];
-                            var modelId = this.getStatementId(t,this.records,true,i);
+                            var modelId = null;
+                            if(t=='this') {
+                                modelId = 'seq';
+                            } else {
+                                modelId = this.getStatementId(t,this.records,true,i);
+                            }
                             if(modelId == 'NOTFOUND') {
                                 console.dir(this.records);
                                 reject('Table ['+t+'] was not found in the above list of records');
