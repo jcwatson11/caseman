@@ -168,6 +168,10 @@ class CaseSetter {
                         strSql += fn();
                     }
                 }
+                if(instruction['reusableAutoIncrement']) {
+                    var aiName = instruction['reusableAutoIncrement'];
+                    strSql += "\nDECLARE @"+i+aiName+" bigint;\n"
+                }
                 strSql += "\nDECLARE @"+scopeIdVariable+" bigint;\n"
                 this.declaredVariables.push(scopeIdVariable);
                 if(instruction.populateFrom) {
@@ -200,6 +204,10 @@ class CaseSetter {
                 util._extend(this.boundParameters,insertBindings);
                 strSql += insertSql;
                 strSql += "\nSELECT @"+scopeIdVariable+" = SCOPE_IDENTITY();\n";
+                if(instruction['reusableAutoIncrement']) {
+                    var aiName = instruction['reusableAutoIncrement'];
+                    strSql += "\nSET @"+i+aiName+" = @"+scopeIdVariable+" ;\n"
+                }
             }
             // Now go back through the sequences and replace their target field names
             // with the sequence name
