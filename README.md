@@ -252,6 +252,10 @@ Note: populateFrom does not query the database to get values that can't be acqui
 
 Properites are local field names and their values are objects that define the tablename: fieldname that the local field should be populated from.
 
+##### reusableAutoIncrement
+
+string: Defines the name of an autoincremented primary key field on this table that you want to use in a later model's populateFrom field. This must be declared in the model that the value is coming from so that it can be used later.
+
 ##### row
 
 object: Defines static data that should be inserted into e.table.
